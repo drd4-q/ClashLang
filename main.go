@@ -8,12 +8,12 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println("Использование: mylang <имя_файла.mylang>")
+		fmt.Println("Использование: clashlang <имя_файла.clashlang>")
 		return
 	}
 
 	filename := os.Args[1]
-	if !strings.HasSuffix(filename, ".mylang") {
+	if !strings.HasSuffix(filename, ".clashlang") {
 		fmt.Println("Ошибка: файл должен иметь расширение .mylang")
 		return
 	}
