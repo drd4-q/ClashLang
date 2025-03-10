@@ -1,0 +1,70 @@
+{
+    "commands": [
+      {
+        "id": 1,
+        "name": "Print",
+        "description": "Выводит значение переменной",
+        "pattern": "Print ({{var}})"
+      },
+      {
+        "id": 2,
+        "name": "Solve.input",
+        "description": "Запрашивает ввод числа",
+        "pattern": "Solve.input() = {{var}}"
+      },
+      {
+        "id": 3,
+        "name": "Solve",
+        "description": "Выполняет вычисление",
+        "pattern": "Solve ({{expr}})"
+      },
+      {
+        "id": 4,
+        "name": "Solve.out",
+        "description": "Сохраняет результат вычисления",
+        "pattern": "Solve.out = {{var}}"
+      },
+      {
+        "id": 5,
+        "name": "Text.input",
+        "description": "Запрашивает ввод текста",
+        "pattern": "Text.input() = {{var}}"
+      },
+      {
+        "id": 6,
+        "name": "Text",
+        "description": "Складывает два текста с пробелом",
+        "pattern": "Text ({{expr}})"
+      },
+      {
+        "id": 7,
+        "name": "Text.out",
+        "description": "Сохраняет результат текста",
+        "pattern": "Text.out = {{var}}"
+      },
+      {
+        "id": 8,
+        "name": "If",
+        "description": "Условный оператор",
+        "pattern": "If {{var}} = {{value}} {"
+      },
+      {
+        "id": 9,
+        "name": "jump",
+        "description": "Переход к другой функции",
+        "pattern": "jump ({{func}})"
+      },
+      {
+        "id": 13,
+        "name": "Text.length",
+        "description": "Возвращает длину текста",
+        "pattern": "Text.length({{var}})"
+      },
+      {
+        "id": 14,
+        "name": "Text.upper",
+        "description": "Преобразует текст в верхний регистр",
+        "pattern": "Text.upper({{var}})"
+      }
+    ]
+  }
