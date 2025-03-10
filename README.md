@@ -1,2 +1,2 @@
 # Сlashlang
-Programming language based on GO Lang
+Programming language based on GO
