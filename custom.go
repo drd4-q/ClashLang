@@ -1,3 +1,4 @@
+package main
 package custom
 
 type CustomModule struct{}
