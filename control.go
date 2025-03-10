@@ -1,3 +1,4 @@
+package main
 package control
 
 type ControlModule struct{}
