@@ -1,2 +1,2 @@
-# clashlang
-my first lang
+# Сlashlang
+Programming language based on GO Lang
