@@ -4,18 +4,13 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"math"
+	"math/rand"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
-
-	"github.com/yourusername/clashlang/math"
-	"github.com/yourusername/clashlang/strings"
-	"github.com/yourusername/clashlang/control"
-	"github.com/yourusername/clashlang/io"
-	"github.com/yourusername/clashlang/data"
-	"github.com/yourusername/clashlang/system"
-	"github.com/yourusername/clashlang/custom"
 )
 
 // Command описывает структуру команды из JSON
@@ -39,13 +34,6 @@ type Interpreter struct {
 	functions  map[string][]string
 	inIfBlock  bool
 	ifBlock    []string
-	math       *math.MathModule
-	strings    *strings.StringModule
-	control    *control.ControlModule
-	io         *io.IOModule
-	data       *data.DataModule
-	system     *system.SystemModule
-	custom     *custom.CustomModule
 }
 
 func NewInterpreter() *Interpreter {
@@ -54,13 +42,6 @@ func NewInterpreter() *Interpreter {
 		variables: make(map[string]interface{}),
 		functions: make(map[string][]string),
 		ifBlock:   []string{},
-		math:      math.NewMathModule(),
-		strings:   strings.NewStringModule(),
-		control:   control.NewControlModule(),
-		io:        io.NewIOModule(),
-		data:      data.NewDataModule(),
-		system:    system.NewSystemModule(),
-		custom:    custom.NewCustomModule(),
 	}
 	interp.loadCommands()
 	return interp
@@ -163,116 +144,495 @@ func (i *Interpreter) ExecuteStatement(line string) {
 		}
 		switch cmd.ID {
 		case 1: // Print
-			i.io.HandlePrint(cmd, params, i.variables)
+			varName := params["var"]
+			if val, ok := i.variables[varName]; ok {
+				fmt.Println(val)
+			} else {
+				fmt.Println(varName)
+			}
 		case 2: // Solve.input
-			i.io.HandleSolveInput(cmd, params, i.variables)
+			varName := params["var"]
+			fmt.Printf("Введите число для %s: ", varName)
+			reader := bufio.NewReader(os.Stdin)
+			input, _ := reader.ReadString('\n')
+			num, _ := strconv.Atoi(strings.TrimSpace(input))
+			i.variables[varName] = num
 		case 3: // Solve
-			i.math.HandleSolve(cmd, params, i.variables, &i.lastResult)
+			expr := params["expr"]
+			i.lastResult = parseExpression(expr, i.variables)
 		case 4: // Solve.out
-			i.math.HandleSolveOut(cmd, params, i.variables, i.lastResult)
+			varName := params["var"]
+			i.variables[varName] = i.lastResult
 		case 5: // Text.input
-			i.io.HandleTextInput(cmd, params, i.variables)
+			varName := params["var"]
+			fmt.Printf("Введите текст для %s: ", varName)
+			reader := bufio.NewReader(os.Stdin)
+			input, _ := reader.ReadString('\n')
+			i.variables[varName] = strings.TrimSpace(input)
 		case 6: // Text
-			i.strings.HandleText(cmd, params, i.variables, &i.lastResult)
+			expr := params["expr"]
+			i.lastResult = parseTextExpression(expr, i.variables)
 		case 7: // Text.out
-			i.strings.HandleTextOut(cmd, params, i.variables, i.lastResult)
+			varName := params["var"]
+			i.variables[varName] = i.lastResult
 		case 8: // If
-			i.control.HandleIf(cmd, params, i.variables, &i.inIfBlock, &i.ifBlock)
+			varName := params["var"]
+			valueStr := params["value"]
+			value, _ := strconv.Atoi(valueStr)
+			if val, ok := i.variables[varName].(int); ok && val == value {
+				i.inIfBlock = true
+			}
 		case 9: // Jump
-			i.custom.HandleJump(cmd, params, i.functions, i.ExecuteStatement)
+			funcName := params["func"]
+			if cmds, ok := i.functions[funcName]; ok {
+				for _, cmd := range cmds {
+					i.ExecuteStatement(cmd)
+				}
+			}
 		case 13: // Text.length
-			i.strings.HandleTextLength(cmd, params, i.variables, &i.lastResult)
+			varName := params["var"]
+			if val, ok := i.variables[varName].(string); ok {
+				i.lastResult = utf8.RuneCountInString(val)
+			} else {
+				fmt.Println("Ошибка: переменная не является текстом")
+			}
 		case 14: // Text.upper
-			i.strings.HandleTextUpper(cmd, params, i.variables, &i.lastResult)
-		// Новые функции из модулей
+			varName := params["var"]
+			if val, ok := i.variables[varName].(string); ok {
+				i.lastResult = strings.ToUpper(val)
+			} else {
+				fmt.Println("Ошибка: переменная не является текстом")
+			}
+		// Новые математические функции (15-25)
 		case 15: // abs
-			i.math.HandleAbs(cmd, params, i.variables, &i.lastResult)
+			varName := params["var"]
+			if val, ok := i.variables[varName].(float64); ok {
+				i.lastResult = math.Abs(val)
+			} else {
+				i.lastResult = 0.0
+				fmt.Println("Ошибка: переменная не является числом")
+			}
 		case 16: // sqrt
-			i.math.HandleSqrt(cmd, params, i.variables, &i.lastResult)
+			varName := params["var"]
+			if val, ok := i.variables[varName].(float64); ok {
+				i.lastResult = math.Sqrt(val)
+			} else {
+				i.lastResult = 0.0
+				fmt.Println("Ошибка: переменная не является числом")
+			}
 		case 17: // pow
-			i.math.HandlePow(cmd, params, i.variables, &i.lastResult)
+			baseStr := params["base"]
+			expStr := params["exponent"]
+			base, _ := strconv.ParseFloat(baseStr, 64)
+			exp, _ := strconv.ParseFloat(expStr, 64)
+			i.lastResult = math.Pow(base, exp)
 		case 18: // round
-			i.math.HandleRound(cmd, params, i.variables, &i.lastResult)
+			varName := params["var"]
+			if val, ok := i.variables[varName].(float64); ok {
+				i.lastResult = math.Round(val)
+			} else {
+				i.lastResult = 0.0
+				fmt.Println("Ошибка: переменная не является числом")
+			}
 		case 19: // sin
-			i.math.HandleSin(cmd, params, i.variables, &i.lastResult)
+			varName := params["var"]
+			if val, ok := i.variables[varName].(float64); ok {
+				i.lastResult = math.Sin(val)
+			} else {
+				i.lastResult = 0.0
+				fmt.Println("Ошибка: переменная не является числом")
+			}
 		case 20: // cos
-			i.math.HandleCos(cmd, params, i.variables, &i.lastResult)
+			varName := params["var"]
+			if val, ok := i.variables[varName].(float64); ok {
+				i.lastResult = math.Cos(val)
+			} else {
+				i.lastResult = 0.0
+				fmt.Println("Ошибка: переменная не является числом")
+			}
 		case 21: // tan
-			i.math.HandleTan(cmd, params, i.variables, &i.lastResult)
+			varName := params["var"]
+			if val, ok := i.variables[varName].(float64); ok {
+				i.lastResult = math.Tan(val)
+			} else {
+				i.lastResult = 0.0
+				fmt.Println("Ошибка: переменная не является числом")
+			}
 		case 22: // log
-			i.math.HandleLog(cmd, params, i.variables, &i.lastResult)
+			varName := params["var"]
+			if val, ok := i.variables[varName].(float64); ok {
+				i.lastResult = math.Log(val)
+			} else {
+				i.lastResult = 0.0
+				fmt.Println("Ошибка: переменная не является числом")
+			}
 		case 23: // log10
-			i.math.HandleLog10(cmd, params, i.variables, &i.lastResult)
+			varName := params["var"]
+			if val, ok := i.variables[varName].(float64); ok {
+				i.lastResult = math.Log10(val)
+			} else {
+				i.lastResult = 0.0
+				fmt.Println("Ошибка: переменная не является числом")
+			}
 		case 24: // random
-			i.math.HandleRandom(cmd, params, i.variables, &i.lastResult)
+			i.lastResult = rand.Float64()
 		case 25: // randint
-			i.math.HandleRandInt(cmd, params, i.variables, &i.lastResult)
+			minStr := params["min"]
+			maxStr := params["max"]
+			min, _ := strconv.Atoi(minStr)
+			max, _ := strconv.Atoi(maxStr)
+			i.lastResult = rand.Intn(max-min+1) + min
+		// Новые строковые функции (26-32)
 		case 26: // len
-			i.strings.HandleLen(cmd, params, i.variables, &i.lastResult)
+			varName := params["var"]
+			if val, ok := i.variables[varName].(string); ok {
+				i.lastResult = utf8.RuneCountInString(val)
+			} else {
+				i.lastResult = 0
+				fmt.Println("Ошибка: переменная не является строкой")
+			}
 		case 27: // substr
-			i.strings.HandleSubstr(cmd, params, i.variables, &i.lastResult)
+			varName := params["str"]
+			startStr := params["start"]
+			lengthStr := params["length"]
+			start, _ := strconv.Atoi(startStr)
+			length, _ := strconv.Atoi(lengthStr)
+			if val, ok := i.variables[varName].(string); ok {
+				if start >= 0 && start < len(val) && length >= 0 {
+					if start+length > len(val) {
+						length = len(val) - start
+					}
+					i.lastResult = val[start : start+length]
+				} else {
+					i.lastResult = ""
+					fmt.Println("Ошибка: неверные индексы")
+				}
+			} else {
+				i.lastResult = ""
+				fmt.Println("Ошибка: переменная не является строкой")
+			}
 		case 28: // find
-			i.strings.HandleFind(cmd, params, i.variables, &i.lastResult)
+			strVar := params["str"]
+			subVar := params["sub"]
+			if str, ok := i.variables[strVar].(string); ok {
+				if sub, ok := i.variables[subVar].(string); ok {
+					i.lastResult = strings.Index(str, sub)
+				} else {
+					i.lastResult = -1
+					fmt.Println("Ошибка: подстрока не является строкой")
+				}
+			} else {
+				i.lastResult = -1
+				fmt.Println("Ошибка: строка не является строкой")
+			}
 		case 29: // replace
-			i.strings.HandleReplace(cmd, params, i.variables, &i.lastResult)
+			strVar := params["str"]
+			oldVar := params["old"]
+			newVar := params["new"]
+			if str, ok := i.variables[strVar].(string); ok {
+				if old, ok := i.variables[oldVar].(string); ok {
+					if new, ok := i.variables[newVar].(string); ok {
+						i.lastResult = strings.Replace(str, old, new, -1)
+					} else {
+						i.lastResult = str
+						fmt.Println("Ошибка: новое значение не является строкой")
+					}
+				} else {
+					i.lastResult = str
+					fmt.Println("Ошибка: старое значение не является строкой")
+				}
+			} else {
+				i.lastResult = ""
+				fmt.Println("Ошибка: строка не является строкой")
+			}
 		case 30: // split
-			i.strings.HandleSplit(cmd, params, i.variables, &i.lastResult)
+			strVar := params["str"]
+			sepVar := params["sep"]
+			if str, ok := i.variables[strVar].(string); ok {
+				if sep, ok := i.variables[sepVar].(string); ok {
+					i.lastResult = strings.Split(str, sep)
+				} else {
+					i.lastResult = []string{str}
+					fmt.Println("Ошибка: разделитель не является строкой")
+				}
+			} else {
+				i.lastResult = []string{}
+				fmt.Println("Ошибка: строка не является строкой")
+			}
 		case 31: // join
-			i.strings.HandleJoin(cmd, params, i.variables, &i.lastResult)
+			sliceVar := params["slice"]
+			sepVar := params["sep"]
+			if slice, ok := i.variables[sliceVar].([]string); ok {
+				if sep, ok := i.variables[sepVar].(string); ok {
+					i.lastResult = strings.Join(slice, sep)
+				} else {
+					i.lastResult = strings.Join(slice, "")
+					fmt.Println("Ошибка: разделитель не является строкой")
+				}
+			} else {
+				i.lastResult = ""
+				fmt.Println("Ошибка: переменная не является срезом строк")
+			}
 		case 32: // lower
-			i.strings.HandleLower(cmd, params, i.variables, &i.lastResult)
+			varName := params["var"]
+			if val, ok := i.variables[varName].(string); ok {
+				i.lastResult = strings.ToLower(val)
+			} else {
+				i.lastResult = ""
+				fmt.Println("Ошибка: переменная не является строкой")
+			}
+		// Новые функции управления потоком (33-39)
 		case 33: // for
-			i.control.HandleFor(cmd, params, i.variables, i.ExecuteStatement)
+			varName := params["var"]
+			startStr := params["start"]
+			endStr := params["end"]
+			start, _ := strconv.Atoi(startStr)
+			end, _ := strconv.Atoi(endStr)
+			for i := start; i <= end; i++ {
+				i.variables[varName] = i
+				i.ExecuteStatement("{")
+			}
 		case 34: // while
-			i.control.HandleWhile(cmd, params, i.variables, i.ExecuteStatement, &i.inIfBlock)
+			condVar := params["var"]
+			condValueStr := params["value"]
+			condValue, _ := strconv.Atoi(condValueStr)
+			for {
+				if val, ok := i.variables[condVar].(int); ok && val == condValue {
+					i.ExecuteStatement("{")
+					break
+				}
+			}
 		case 35: // do
-			i.control.HandleDo(cmd, params, i.variables, i.ExecuteStatement, &i.inIfBlock)
+			// Пустая реализация, требует доработки
 		case 36: // while_do
-			i.control.HandleWhileDo(cmd, params, i.variables, i.ExecuteStatement, &i.inIfBlock)
+			condVar := params["var"]
+			condValueStr := params["value"]
+			condValue, _ := strconv.Atoi(condValueStr)
+			for {
+				i.ExecuteStatement("{")
+				if val, ok := i.variables[condVar].(int); ok && val == condValue {
+					break
+				}
+			}
 		case 37: // switch
-			i.control.HandleSwitch(cmd, params, i.variables, i.ExecuteStatement, &i.inIfBlock)
+			i.inIfBlock = true
+			varName := params["var"]
+			i.variables["switch_var"] = i.variables[varName]
 		case 38: // case
-			i.control.HandleCase(cmd, params, i.variables, i.ExecuteStatement, &i.inIfBlock)
+			if i.inIfBlock {
+				valueStr := params["value"]
+				if val, ok := i.variables["switch_var"].(int); ok {
+					caseValue, _ := strconv.Atoi(valueStr)
+					if val == caseValue {
+						i.ExecuteStatement("{")
+					}
+				}
+			}
 		case 39: // default
-			i.control.HandleDefault(cmd, params, i.variables, i.ExecuteStatement, &i.inIfBlock)
+			if i.inIfBlock {
+				i.ExecuteStatement("{")
+			}
+		// Новые функции ввода/вывода (40-43)
 		case 40: // file.read
-			i.io.HandleFileRead(cmd, params, i.variables, &i.lastResult)
+			fileName := params["file"]
+			content, err := os.ReadFile(fileName)
+			if err != nil {
+				i.lastResult = ""
+				fmt.Println("Ошибка чтения файла:", err)
+			} else {
+				i.lastResult = string(content)
+			}
 		case 41: // file.write
-			i.io.HandleFileWrite(cmd, params, i.variables, i.lastResult)
+			fileName := params["file"]
+			if content, ok := i.lastResult.(string); ok {
+				err := os.WriteFile(fileName, []byte(content), 0644)
+				if err != nil {
+					fmt.Println("Ошибка записи файла:", err)
+				}
+			}
 		case 42: // print_formatted
-			i.io.HandlePrintFormatted(cmd, params, i.variables)
+			varName := params["var"]
+			if val, ok := i.variables[varName]; ok {
+				fmt.Printf("%v\n", val)
+			} else {
+				fmt.Printf("%s\n", varName)
+			}
 		case 43: // input
-			i.io.HandleInput(cmd, params, i.variables)
+			varName := params["var"]
+			fmt.Printf("Введите значение для %s: ", varName)
+			reader := bufio.NewReader(os.Stdin)
+			input, _ := reader.ReadString('\n')
+			i.variables[varName] = strings.TrimSpace(input)
+		// Новые функции структур данных (44-52)
 		case 44: // array_create
-			i.data.HandleArrayCreate(cmd, params, i.variables, &i.lastResult)
+			sizeStr := params["size"]
+			size, _ := strconv.Atoi(sizeStr)
+			i.lastResult = make([]interface{}, size)
 		case 45: // array_set
-			i.data.HandleArraySet(cmd, params, i.variables)
+			arrayVar := params["array"]
+			indexStr := params["index"]
+			valueVar := params["value"]
+			index, _ := strconv.Atoi(indexStr)
+			if array, ok := i.variables[arrayVar].([]interface{}); ok {
+				if index >= 0 && index < len(array) {
+					if val, ok := i.variables[valueVar]; ok {
+						array[index] = val
+					}
+				}
+			}
 		case 46: // array_get
-			i.data.HandleArrayGet(cmd, params, i.variables, &i.lastResult)
+			arrayVar := params["array"]
+			indexStr := params["index"]
+			index, _ := strconv.Atoi(indexStr)
+			if array, ok := i.variables[arrayVar].([]interface{}); ok {
+				if index >= 0 && index < len(array) {
+					i.lastResult = array[index]
+				} else {
+					i.lastResult = nil
+					fmt.Println("Ошибка: индекс вне диапазона")
+				}
+			}
 		case 47: // list_create
-			i.data.HandleListCreate(cmd, params, i.variables, &i.lastResult)
+			i.lastResult = []interface{}{}
 		case 48: // list_append
-			i.data.HandleListAppend(cmd, params, i.variables)
+			listVar := params["list"]
+			valueVar := params["value"]
+			if list, ok := i.variables[listVar].([]interface{}); ok {
+				if val, ok := i.variables[valueVar]; ok {
+					i.variables[listVar] = append(list, val)
+				}
+			}
 		case 49: // list_get
-			i.data.HandleListGet(cmd, params, i.variables, &i.lastResult)
+			listVar := params["list"]
+			indexStr := params["index"]
+			index, _ := strconv.Atoi(indexStr)
+			if list, ok := i.variables[listVar].([]interface{}); ok {
+				if index >= 0 && index < len(list) {
+					i.lastResult = list[index]
+				} else {
+					i.lastResult = nil
+					fmt.Println("Ошибка: индекс вне диапазона")
+				}
+			}
 		case 50: // dict_create
-			i.data.HandleDictCreate(cmd, params, i.variables, &i.lastResult)
+			i.lastResult = make(map[string]interface{})
 		case 51: // dict_set
-			i.data.HandleDictSet(cmd, params, i.variables)
+			dictVar := params["dict"]
+			keyVar := params["key"]
+			valueVar := params["value"]
+			if dict, ok := i.variables[dictVar].(map[string]interface{}); ok {
+				if key, ok := i.variables[keyVar].(string); ok {
+					if val, ok := i.variables[valueVar]; ok {
+						dict[key] = val
+					}
+				}
+			}
 		case 52: // dict_get
-			i.data.HandleDictGet(cmd, params, i.variables, &i.lastResult)
+			dictVar := params["dict"]
+			keyVar := params["key"]
+			if dict, ok := i.variables[dictVar].(map[string]interface{}); ok {
+				if key, ok := i.variables[keyVar].(string); ok {
+					if val, exists := dict[key]; exists {
+						i.lastResult = val
+					} else {
+						i.lastResult = nil
+						fmt.Println("Ошибка: ключ не найден")
+					}
+				}
+			}
+		// Новые системные функции (53-55)
 		case 53: // time
-			i.system.HandleTime(cmd, params, i.variables, &i.lastResult)
+			i.lastResult = time.Now().Format("15:04:05")
 		case 54: // date
-			i.system.HandleDate(cmd, params, i.variables, &i.lastResult)
+			i.lastResult = time.Now().Format("2006-01-02")
 		case 55: // env
-			i.system.HandleEnv(cmd, params, i.variables, &i.lastResult)
+			varName := params["var"]
+			i.lastResult = os.Getenv(varName)
+		// Новые пользовательские функции (56-57)
 		case 56: // def
-			i.custom.HandleDef(cmd, params, i.functions)
+			funcName := params["name"]
+			i.functions[funcName] = []string{}
 		case 57: // function_call
-			i.custom.HandleFunctionCall(cmd, params, i.functions, i.ExecuteStatement)
+			funcName := params["func"]
+			if cmds, ok := i.functions[funcName]; ok {
+				for _, cmd := range cmds {
+					i.ExecuteStatement(cmd)
+				}
+			}
 		}
 	}
+}
+
+func parseExpression(expr string, variables map[string]interface{}) interface{} {
+	expr = strings.ReplaceAll(expr, " ", "")
+	// Поддержка сложения
+	parts := strings.Split(expr, "+")
+	if len(parts) == 2 {
+		left := getValue(parts[0], variables)
+		right := getValue(parts[1], variables)
+		if left != nil && right != nil {
+			return left.(int) + right.(int)
+		}
+	}
+	// Поддержка вычитания
+	parts = strings.Split(expr, "-")
+	if len(parts) == 2 {
+		left := getValue(parts[0], variables)
+		right := getValue(parts[1], variables)
+		if left != nil && right != nil {
+			return left.(int) - right.(int)
+		}
+	}
+	// Поддержка умножения
+	parts = strings.Split(expr, "*")
+	if len(parts) == 2 {
+		left := getValue(parts[0], variables)
+		right := getValue(parts[1], variables)
+		if left != nil && right != nil {
+			return left.(int) * right.(int)
+		}
+	}
+	// Поддержка деления
+	parts = strings.Split(expr, "/")
+	if len(parts) == 2 {
+		left := getValue(parts[0], variables)
+		right := getValue(parts[1], variables)
+		if left != nil && right != nil && right.(int) != 0 {
+			return left.(int) / right.(int)
+		} else {
+			fmt.Println("Ошибка: деление на ноль")
+			return 0
+		}
+	}
+	return getValue(expr, variables)
+}
+
+func getValue(part string, variables map[string]interface{}) interface{} {
+	if val, ok := variables[part]; ok {
+		return val
+	}
+	num, err := strconv.Atoi(part)
+	if err == nil {
+		return num
+	}
+	return nil
+}
+
+func parseTextExpression(expr string, variables map[string]interface{}) string {
+	expr = strings.ReplaceAll(expr, " ", "")
+	parts := strings.Split(expr, "+")
+	var result string
+	for _, part := range parts {
+		if val, ok := variables[part].(string); ok {
+			if result != "" {
+				result += " "
+			}
+			result += val
+		} else {
+			fmt.Println("Ошибка: переменная не является текстом")
+		}
+	}
+	return result
 }
 
 func (i *Interpreter) ExecuteProgram(program string) {
