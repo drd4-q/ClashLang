@@ -7,6 +7,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -37,6 +38,7 @@ type Interpreter struct {
 }
 
 func NewInterpreter() *Interpreter {
+	rand.Seed(time.Now().UnixNano()) // Инициализация генератора случайных чисел
 	interp := &Interpreter{
 		commands:  make(map[int]Command),
 		variables: make(map[string]interface{}),
@@ -124,8 +126,6 @@ func (i *Interpreter) ExecuteStatement(line string) {
 				}
 			}
 		}
-	case lineLower == "memory out":
-		fmt.Println("Global memory:", i.variables)
 	case lineLower == "}":
 		if i.inIfBlock {
 			i.inIfBlock = false
@@ -187,6 +187,18 @@ func (i *Interpreter) ExecuteStatement(line string) {
 			if cmds, ok := i.functions[funcName]; ok {
 				for _, cmd := range cmds {
 					i.ExecuteStatement(cmd)
+				}
+			}
+		case 10: // memory out
+			// Форматированный вывод переменных
+			var keys []string
+			for k := range i.variables {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys) // Сортировка ключей по алфавиту
+			for idx, key := range keys {
+				if val, ok := i.variables[key]; ok {
+					fmt.Printf("%d) %v\n", idx+1, val)
 				}
 			}
 		case 13: // Text.length
