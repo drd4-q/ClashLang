@@ -182,7 +182,7 @@ func (i *Interpreter) ExecuteStatement(line string) {
 			if val, ok := i.variables[varName].(int); ok && val == value {
 				i.inIfBlock = true
 			}
-		case 9: // Jump
+		case 9: // jump
 			funcName := params["func"]
 			if cmds, ok := i.functions[funcName]; ok {
 				for _, cmd := range cmds {
@@ -203,75 +203,100 @@ func (i *Interpreter) ExecuteStatement(line string) {
 			} else {
 				fmt.Println("Ошибка: переменная не является текстом")
 			}
-		// Новые математические функции (15-25)
+		// Новые функции
 		case 15: // abs
 			varName := params["var"]
 			if val, ok := i.variables[varName].(float64); ok {
 				i.lastResult = math.Abs(val)
+			} else if val, ok := i.variables[varName].(int); ok {
+				i.lastResult = float64(math.Abs(float64(val)))
 			} else {
-				i.lastResult = 0.0
 				fmt.Println("Ошибка: переменная не является числом")
 			}
 		case 16: // sqrt
 			varName := params["var"]
 			if val, ok := i.variables[varName].(float64); ok {
 				i.lastResult = math.Sqrt(val)
+			} else if val, ok := i.variables[varName].(int); ok {
+				i.lastResult = math.Sqrt(float64(val))
 			} else {
-				i.lastResult = 0.0
 				fmt.Println("Ошибка: переменная не является числом")
 			}
 		case 17: // pow
 			baseStr := params["base"]
 			expStr := params["exponent"]
-			base, _ := strconv.ParseFloat(baseStr, 64)
-			exp, _ := strconv.ParseFloat(expStr, 64)
+			var base, exp float64
+			if val, ok := i.variables[baseStr]; ok {
+				if v, ok := val.(int); ok {
+					base = float64(v)
+				} else if v, ok := val.(float64); ok {
+					base = v
+				}
+			} else {
+				base, _ = strconv.ParseFloat(baseStr, 64)
+			}
+			if val, ok := i.variables[expStr]; ok {
+				if v, ok := val.(int); ok {
+					exp = float64(v)
+				} else if v, ok := val.(float64); ok {
+					exp = v
+				}
+			} else {
+				exp, _ = strconv.ParseFloat(expStr, 64)
+			}
 			i.lastResult = math.Pow(base, exp)
 		case 18: // round
 			varName := params["var"]
 			if val, ok := i.variables[varName].(float64); ok {
 				i.lastResult = math.Round(val)
+			} else if val, ok := i.variables[varName].(int); ok {
+				i.lastResult = float64(val)
 			} else {
-				i.lastResult = 0.0
 				fmt.Println("Ошибка: переменная не является числом")
 			}
 		case 19: // sin
 			varName := params["var"]
 			if val, ok := i.variables[varName].(float64); ok {
 				i.lastResult = math.Sin(val)
+			} else if val, ok := i.variables[varName].(int); ok {
+				i.lastResult = math.Sin(float64(val))
 			} else {
-				i.lastResult = 0.0
 				fmt.Println("Ошибка: переменная не является числом")
 			}
 		case 20: // cos
 			varName := params["var"]
 			if val, ok := i.variables[varName].(float64); ok {
 				i.lastResult = math.Cos(val)
+			} else if val, ok := i.variables[varName].(int); ok {
+				i.lastResult = math.Cos(float64(val))
 			} else {
-				i.lastResult = 0.0
 				fmt.Println("Ошибка: переменная не является числом")
 			}
 		case 21: // tan
 			varName := params["var"]
 			if val, ok := i.variables[varName].(float64); ok {
 				i.lastResult = math.Tan(val)
+			} else if val, ok := i.variables[varName].(int); ok {
+				i.lastResult = math.Tan(float64(val))
 			} else {
-				i.lastResult = 0.0
 				fmt.Println("Ошибка: переменная не является числом")
 			}
 		case 22: // log
 			varName := params["var"]
 			if val, ok := i.variables[varName].(float64); ok {
 				i.lastResult = math.Log(val)
+			} else if val, ok := i.variables[varName].(int); ok {
+				i.lastResult = math.Log(float64(val))
 			} else {
-				i.lastResult = 0.0
 				fmt.Println("Ошибка: переменная не является числом")
 			}
 		case 23: // log10
 			varName := params["var"]
 			if val, ok := i.variables[varName].(float64); ok {
 				i.lastResult = math.Log10(val)
+			} else if val, ok := i.variables[varName].(int); ok {
+				i.lastResult = math.Log10(float64(val))
 			} else {
-				i.lastResult = 0.0
 				fmt.Println("Ошибка: переменная не является числом")
 			}
 		case 24: // random
@@ -279,20 +304,31 @@ func (i *Interpreter) ExecuteStatement(line string) {
 		case 25: // randint
 			minStr := params["min"]
 			maxStr := params["max"]
-			min, _ := strconv.Atoi(minStr)
-			max, _ := strconv.Atoi(maxStr)
+			var min, max int
+			if val, ok := i.variables[minStr]; ok {
+				if v, ok := val.(int); ok {
+					min = v
+				}
+			} else {
+				min, _ = strconv.Atoi(minStr)
+			}
+			if val, ok := i.variables[maxStr]; ok {
+				if v, ok := val.(int); ok {
+					max = v
+				}
+			} else {
+				max, _ = strconv.Atoi(maxStr)
+			}
 			i.lastResult = rand.Intn(max-min+1) + min
-		// Новые строковые функции (26-32)
 		case 26: // len
 			varName := params["var"]
 			if val, ok := i.variables[varName].(string); ok {
 				i.lastResult = utf8.RuneCountInString(val)
 			} else {
-				i.lastResult = 0
 				fmt.Println("Ошибка: переменная не является строкой")
 			}
 		case 27: // substr
-			varName := params["str"]
+			varName := params["var"]
 			startStr := params["start"]
 			lengthStr := params["length"]
 			start, _ := strconv.Atoi(startStr)
@@ -304,11 +340,9 @@ func (i *Interpreter) ExecuteStatement(line string) {
 					}
 					i.lastResult = val[start : start+length]
 				} else {
-					i.lastResult = ""
 					fmt.Println("Ошибка: неверные индексы")
 				}
 			} else {
-				i.lastResult = ""
 				fmt.Println("Ошибка: переменная не является строкой")
 			}
 		case 28: // find
@@ -318,11 +352,9 @@ func (i *Interpreter) ExecuteStatement(line string) {
 				if sub, ok := i.variables[subVar].(string); ok {
 					i.lastResult = strings.Index(str, sub)
 				} else {
-					i.lastResult = -1
 					fmt.Println("Ошибка: подстрока не является строкой")
 				}
 			} else {
-				i.lastResult = -1
 				fmt.Println("Ошибка: строка не является строкой")
 			}
 		case 29: // replace
@@ -334,15 +366,12 @@ func (i *Interpreter) ExecuteStatement(line string) {
 					if new, ok := i.variables[newVar].(string); ok {
 						i.lastResult = strings.Replace(str, old, new, -1)
 					} else {
-						i.lastResult = str
 						fmt.Println("Ошибка: новое значение не является строкой")
 					}
 				} else {
-					i.lastResult = str
 					fmt.Println("Ошибка: старое значение не является строкой")
 				}
 			} else {
-				i.lastResult = ""
 				fmt.Println("Ошибка: строка не является строкой")
 			}
 		case 30: // split
@@ -352,11 +381,9 @@ func (i *Interpreter) ExecuteStatement(line string) {
 				if sep, ok := i.variables[sepVar].(string); ok {
 					i.lastResult = strings.Split(str, sep)
 				} else {
-					i.lastResult = []string{str}
 					fmt.Println("Ошибка: разделитель не является строкой")
 				}
 			} else {
-				i.lastResult = []string{}
 				fmt.Println("Ошибка: строка не является строкой")
 			}
 		case 31: // join
@@ -366,11 +393,9 @@ func (i *Interpreter) ExecuteStatement(line string) {
 				if sep, ok := i.variables[sepVar].(string); ok {
 					i.lastResult = strings.Join(slice, sep)
 				} else {
-					i.lastResult = strings.Join(slice, "")
 					fmt.Println("Ошибка: разделитель не является строкой")
 				}
 			} else {
-				i.lastResult = ""
 				fmt.Println("Ошибка: переменная не является срезом строк")
 			}
 		case 32: // lower
@@ -378,66 +403,76 @@ func (i *Interpreter) ExecuteStatement(line string) {
 			if val, ok := i.variables[varName].(string); ok {
 				i.lastResult = strings.ToLower(val)
 			} else {
-				i.lastResult = ""
 				fmt.Println("Ошибка: переменная не является строкой")
 			}
-		// Новые функции управления потоком (33-39)
 		case 33: // for
 			varName := params["var"]
 			startStr := params["start"]
 			endStr := params["end"]
 			start, _ := strconv.Atoi(startStr)
 			end, _ := strconv.Atoi(endStr)
-			for i := start; i <= end; i++ {
-				i.variables[varName] = i
-				i.ExecuteStatement("{")
+			for j := start; j <= end; j++ {
+				i.variables[varName] = j
+				for _, stmt := range i.ifBlock {
+					i.ExecuteStatement(stmt)
+				}
 			}
+			i.ifBlock = []string{}
 		case 34: // while
 			condVar := params["var"]
 			condValueStr := params["value"]
 			condValue, _ := strconv.Atoi(condValueStr)
 			for {
 				if val, ok := i.variables[condVar].(int); ok && val == condValue {
-					i.ExecuteStatement("{")
+					for _, stmt := range i.ifBlock {
+						i.ExecuteStatement(stmt)
+					}
+				} else {
 					break
 				}
 			}
+			i.ifBlock = []string{}
 		case 35: // do
-			// Пустая реализация, требует доработки
+			i.inIfBlock = true
 		case 36: // while_do
 			condVar := params["var"]
 			condValueStr := params["value"]
 			condValue, _ := strconv.Atoi(condValueStr)
 			for {
-				i.ExecuteStatement("{")
-				if val, ok := i.variables[condVar].(int); ok && val == condValue {
+				for _, stmt := range i.ifBlock {
+					i.ExecuteStatement(stmt)
+				}
+				if val, ok := i.variables[condVar].(int); ok && val != condValue {
 					break
 				}
 			}
+			i.ifBlock = []string{}
 		case 37: // switch
-			i.inIfBlock = true
 			varName := params["var"]
 			i.variables["switch_var"] = i.variables[varName]
+			i.inIfBlock = true
 		case 38: // case
 			if i.inIfBlock {
 				valueStr := params["value"]
-				if val, ok := i.variables["switch_var"].(int); ok {
-					caseValue, _ := strconv.Atoi(valueStr)
-					if val == caseValue {
-						i.ExecuteStatement("{")
+				value, _ := strconv.Atoi(valueStr)
+				if val, ok := i.variables["switch_var"].(int); ok && val == value {
+					for _, stmt := range i.ifBlock {
+						i.ExecuteStatement(stmt)
 					}
 				}
 			}
+			i.ifBlock = []string{}
 		case 39: // default
 			if i.inIfBlock {
-				i.ExecuteStatement("{")
+				for _, stmt := range i.ifBlock {
+					i.ExecuteStatement(stmt)
+				}
 			}
-		// Новые функции ввода/вывода (40-43)
+			i.ifBlock = []string{}
 		case 40: // file.read
 			fileName := params["file"]
 			content, err := os.ReadFile(fileName)
 			if err != nil {
-				i.lastResult = ""
 				fmt.Println("Ошибка чтения файла:", err)
 			} else {
 				i.lastResult = string(content)
@@ -463,7 +498,6 @@ func (i *Interpreter) ExecuteStatement(line string) {
 			reader := bufio.NewReader(os.Stdin)
 			input, _ := reader.ReadString('\n')
 			i.variables[varName] = strings.TrimSpace(input)
-		// Новые функции структур данных (44-52)
 		case 44: // array_create
 			sizeStr := params["size"]
 			size, _ := strconv.Atoi(sizeStr)
@@ -488,7 +522,6 @@ func (i *Interpreter) ExecuteStatement(line string) {
 				if index >= 0 && index < len(array) {
 					i.lastResult = array[index]
 				} else {
-					i.lastResult = nil
 					fmt.Println("Ошибка: индекс вне диапазона")
 				}
 			}
@@ -510,7 +543,6 @@ func (i *Interpreter) ExecuteStatement(line string) {
 				if index >= 0 && index < len(list) {
 					i.lastResult = list[index]
 				} else {
-					i.lastResult = nil
 					fmt.Println("Ошибка: индекс вне диапазона")
 				}
 			}
@@ -535,12 +567,10 @@ func (i *Interpreter) ExecuteStatement(line string) {
 					if val, exists := dict[key]; exists {
 						i.lastResult = val
 					} else {
-						i.lastResult = nil
 						fmt.Println("Ошибка: ключ не найден")
 					}
 				}
 			}
-		// Новые системные функции (53-55)
 		case 53: // time
 			i.lastResult = time.Now().Format("15:04:05")
 		case 54: // date
@@ -548,7 +578,6 @@ func (i *Interpreter) ExecuteStatement(line string) {
 		case 55: // env
 			varName := params["var"]
 			i.lastResult = os.Getenv(varName)
-		// Новые пользовательские функции (56-57)
 		case 56: // def
 			funcName := params["name"]
 			i.functions[funcName] = []string{}
@@ -565,44 +594,57 @@ func (i *Interpreter) ExecuteStatement(line string) {
 
 func parseExpression(expr string, variables map[string]interface{}) interface{} {
 	expr = strings.ReplaceAll(expr, " ", "")
-	// Поддержка сложения
 	parts := strings.Split(expr, "+")
 	if len(parts) == 2 {
 		left := getValue(parts[0], variables)
 		right := getValue(parts[1], variables)
-		if left != nil && right != nil {
-			return left.(int) + right.(int)
+		if leftFloat, ok := left.(float64); ok {
+			if rightFloat, ok := right.(float64); ok {
+				return leftFloat + rightFloat
+			}
 		}
+		return left.(int) + right.(int)
 	}
-	// Поддержка вычитания
 	parts = strings.Split(expr, "-")
 	if len(parts) == 2 {
 		left := getValue(parts[0], variables)
 		right := getValue(parts[1], variables)
-		if left != nil && right != nil {
-			return left.(int) - right.(int)
+		if leftFloat, ok := left.(float64); ok {
+			if rightFloat, ok := right.(float64); ok {
+				return leftFloat - rightFloat
+			}
 		}
+		return left.(int) - right.(int)
 	}
-	// Поддержка умножения
 	parts = strings.Split(expr, "*")
 	if len(parts) == 2 {
 		left := getValue(parts[0], variables)
 		right := getValue(parts[1], variables)
-		if left != nil && right != nil {
-			return left.(int) * right.(int)
+		if leftFloat, ok := left.(float64); ok {
+			if rightFloat, ok := right.(float64); ok {
+				return leftFloat * rightFloat
+			}
 		}
+		return left.(int) * right.(int)
 	}
-	// Поддержка деления
 	parts = strings.Split(expr, "/")
 	if len(parts) == 2 {
 		left := getValue(parts[0], variables)
 		right := getValue(parts[1], variables)
-		if left != nil && right != nil && right.(int) != 0 {
-			return left.(int) / right.(int)
-		} else {
+		if leftFloat, ok := left.(float64); ok {
+			if rightFloat, ok := right.(float64); ok {
+				if rightFloat == 0 {
+					fmt.Println("Ошибка: деление на ноль")
+					return 0
+				}
+				return leftFloat / rightFloat
+			}
+		}
+		if right.(int) == 0 {
 			fmt.Println("Ошибка: деление на ноль")
 			return 0
 		}
+		return left.(int) / right.(int)
 	}
 	return getValue(expr, variables)
 }
@@ -611,11 +653,13 @@ func getValue(part string, variables map[string]interface{}) interface{} {
 	if val, ok := variables[part]; ok {
 		return val
 	}
-	num, err := strconv.Atoi(part)
-	if err == nil {
+	if num, err := strconv.Atoi(part); err == nil {
 		return num
 	}
-	return nil
+	if num, err := strconv.ParseFloat(part, 64); err == nil {
+		return num
+	}
+	return part
 }
 
 func parseTextExpression(expr string, variables map[string]interface{}) string {
