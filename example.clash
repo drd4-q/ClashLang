@@ -1,0 +1,9 @@
+function (b)
+memory start(
+    text.input() = a
+    text.input() = s
+    text (a+s)
+    text.out = v 
+    print(v)
+)
+memory out
