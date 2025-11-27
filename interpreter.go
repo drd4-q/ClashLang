@@ -1,723 +1,525 @@
 package main
 
 import (
-	"bufio"
-	"encoding/json"
 	"fmt"
 	"math"
-	"math/rand"
 	"os"
-	"sort"
-	"strconv"
-	"strings"
-	"time"
-	"unicode/utf8"
 )
 
-// Command описывает структуру команды из JSON
-type Command struct {
-	ID          int    `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Pattern     string `json:"pattern"`
+// NewInterpreter создает новый интерпретатор
+type NewInterpreter struct {
+	variables      map[string]interface{}
+	functions      map[string]*FunctionNode
+	memoryManager  *MemoryManager
+	processManager *ProcessManager
+	returnValue    interface{}
+	shouldReturn   bool
+	shouldBreak    bool
+	shouldContinue bool
 }
 
-// CommandList для десериализации JSON
-type CommandList struct {
-	Commands []Command `json:"commands"`
-}
-
-// Interpreter управляет выполнением программы
-type Interpreter struct {
-	commands   map[int]Command
-	variables  map[string]interface{}
-	lastResult interface{}
-	functions  map[string][]string
-	inIfBlock  bool
-	ifBlock    []string
-}
-
-func NewInterpreter() *Interpreter {
-	rand.Seed(time.Now().UnixNano()) // Инициализация генератора случайных чисел
-	interp := &Interpreter{
-		commands:  make(map[int]Command),
-		variables: make(map[string]interface{}),
-		functions: make(map[string][]string),
-		ifBlock:   []string{},
-	}
-	interp.loadCommands()
-	return interp
-}
-
-func (i *Interpreter) loadCommands() {
-	file, err := os.ReadFile("commands.json")
-	if err != nil {
-		fmt.Println("Ошибка загрузки commands.json:", err)
-		return
-	}
-	var cmdList CommandList
-	if err := json.Unmarshal(file, &cmdList); err != nil {
-		fmt.Println("Ошибка разбора JSON:", err)
-		return
-	}
-	for _, cmd := range cmdList.Commands {
-		i.commands[cmd.ID] = cmd
+// NewNewInterpreter создает экземпляр интерпретатора
+func NewNewInterpreter() *NewInterpreter {
+	return &NewInterpreter{
+		variables:      make(map[string]interface{}),
+		functions:      make(map[string]*FunctionNode),
+		memoryManager:  NewMemoryManager(),
+		processManager: NewProcessManager(),
 	}
 }
 
-func (i *Interpreter) matchCommand(line string) (Command, map[string]string, bool) {
-	line = strings.TrimSpace(line)
-	lineLower := strings.ToLower(line)
-
-	for _, cmd := range i.commands {
-		pattern := strings.ToLower(cmd.Pattern)
-		parts := strings.Split(pattern, "{{")
-		if len(parts) == 1 && lineLower == pattern {
-			return cmd, nil, true
-		}
-		if strings.HasPrefix(lineLower, parts[0]) {
-			remainder := strings.TrimPrefix(line, cmd.Pattern[:len(parts[0])])
-			if len(parts) > 1 {
-				params := make(map[string]string)
-				for _, part := range parts[1:] {
-					end := strings.Index(part, "}}")
-					if end == -1 {
-						continue
-					}
-					varName := part[:end]
-					closing := part[end+2:]
-					if strings.HasSuffix(remainder, closing) {
-						value := strings.TrimSuffix(remainder, closing)
-						params[varName] = value
-						return cmd, params, true
-					} else {
-						nextPartIdx := strings.Index(remainder, " ")
-						if nextPartIdx != -1 {
-							params[varName] = remainder[:nextPartIdx]
-							remainder = strings.TrimSpace(remainder[nextPartIdx:])
-						}
-					}
-				}
-			}
+// Execute выполняет программу
+func (ni *NewInterpreter) Execute(program *Program) error {
+	for _, stmt := range program.Statements {
+		if err := ni.executeNode(stmt); err != nil {
+			return err
 		}
 	}
-	return Command{}, nil, false
+	return nil
 }
 
-func (i *Interpreter) ExecuteStatement(line string) {
-	if idx := strings.Index(line, "//"); idx != -1 {
-		line = line[:idx]
-	}
-	line = strings.TrimSpace(line)
-	if line == "" {
-		return
+func (ni *NewInterpreter) executeNode(node Node) error {
+	if ni.shouldReturn || ni.shouldBreak || ni.shouldContinue {
+		return nil
 	}
 
-	lineLower := strings.ToLower(line)
-
-	switch {
-	case strings.HasPrefix(lineLower, "memory load ("):
-		funcNames := strings.Trim(strings.TrimPrefix(line, "Memory load ("), ")")
-		for _, funcName := range strings.Split(funcNames, ",") {
-			funcName = strings.TrimSpace(funcName)
-			if cmds, ok := i.functions[funcName]; ok {
-				for _, cmd := range cmds {
-					i.ExecuteStatement(cmd)
-				}
-			}
-		}
-	case lineLower == "}":
-		if i.inIfBlock {
-			i.inIfBlock = false
-			for _, cmd := range i.ifBlock {
-				i.ExecuteStatement(cmd)
-			}
-			i.ifBlock = []string{}
-		}
+	switch n := node.(type) {
+	case *PrintNode:
+		return ni.executePrint(n)
+	case *AssignmentNode:
+		return ni.executeAssignment(n)
+	case *IfNode:
+		return ni.executeIf(n)
+	case *ForNode:
+		return ni.executeFor(n)
+	case *WhileNode:
+		return ni.executeWhile(n)
+	case *FunctionNode:
+		return ni.executeFunction(n)
+	case *FunctionCallNode:
+		_, err := ni.executeFunctionCall(n)
+		return err
+	case *ReturnNode:
+		return ni.executeReturn(n)
+	case *BreakNode:
+		ni.shouldBreak = true
+		return nil
+	case *ContinueNode:
+		ni.shouldContinue = true
+		return nil
+	case *MemAllocNode:
+		return ni.executeMemAlloc(n)
+	case *MemFreeNode:
+		return ni.executeMemFree(n)
+	case *MemCheckNode:
+		ni.memoryManager.Check()
+		return nil
+	case *ProcCreateNode:
+		return ni.executeProcCreate(n)
+	case *ProcReadNode:
+		return ni.executeProcRead(n)
+	case *ProcKillNode:
+		return ni.executeProcKill(n)
+	case *ProcListNode:
+		ni.processManager.List()
+		return nil
 	default:
-		cmd, params, matched := i.matchCommand(line)
-		if !matched {
-			if i.inIfBlock {
-				i.ifBlock = append(i.ifBlock, line)
+		return fmt.Errorf("неизвестный тип узла: %T", node)
+	}
+}
+
+func (ni *NewInterpreter) executePrint(node *PrintNode) error {
+	value, err := ni.evaluateExpression(node.Expression)
+	if err != nil {
+		return err
+	}
+	fmt.Println(value)
+	return nil
+}
+
+func (ni *NewInterpreter) executeAssignment(node *AssignmentNode) error {
+	value, err := ni.evaluateExpression(node.Value)
+	if err != nil {
+		return err
+	}
+	ni.variables[node.Name] = value
+	return nil
+}
+
+func (ni *NewInterpreter) executeIf(node *IfNode) error {
+	condition, err := ni.evaluateExpression(node.Condition)
+	if err != nil {
+		return err
+	}
+
+	if ni.isTruthy(condition) {
+		for _, stmt := range node.ThenBlock {
+			if err := ni.executeNode(stmt); err != nil {
+				return err
 			}
-			return
+			if ni.shouldReturn || ni.shouldBreak || ni.shouldContinue {
+				return nil
+			}
 		}
-		switch cmd.ID {
-		case 1: // Print
-			varName := params["var"]
-			if val, ok := i.variables[varName]; ok {
-				fmt.Println(val)
-			} else {
-				fmt.Println(varName)
+	} else if len(node.ElseBlock) > 0 {
+		for _, stmt := range node.ElseBlock {
+			if err := ni.executeNode(stmt); err != nil {
+				return err
 			}
-		case 2: // Solve.input
-			varName := params["var"]
-			fmt.Printf("Введите число для %s: ", varName)
-			reader := bufio.NewReader(os.Stdin)
-			input, _ := reader.ReadString('\n')
-			num, _ := strconv.Atoi(strings.TrimSpace(input))
-			i.variables[varName] = num
-		case 3: // Solve
-			expr := params["expr"]
-			i.lastResult = parseExpression(expr, i.variables)
-		case 4: // Solve.out
-			varName := params["var"]
-			i.variables[varName] = i.lastResult
-		case 5: // Text.input
-			varName := params["var"]
-			fmt.Printf("Введите текст для %s: ", varName)
-			reader := bufio.NewReader(os.Stdin)
-			input, _ := reader.ReadString('\n')
-			i.variables[varName] = strings.TrimSpace(input)
-		case 6: // Text
-			expr := params["expr"]
-			i.lastResult = parseTextExpression(expr, i.variables)
-		case 7: // Text.out
-			varName := params["var"]
-			i.variables[varName] = i.lastResult
-		case 8: // If
-			varName := params["var"]
-			valueStr := params["value"]
-			value, _ := strconv.Atoi(valueStr)
-			if val, ok := i.variables[varName].(int); ok && val == value {
-				i.inIfBlock = true
+			if ni.shouldReturn || ni.shouldBreak || ni.shouldContinue {
+				return nil
 			}
-		case 9: // jump
-			funcName := params["func"]
-			if cmds, ok := i.functions[funcName]; ok {
-				for _, cmd := range cmds {
-					i.ExecuteStatement(cmd)
-				}
+		}
+	}
+
+	return nil
+}
+
+func (ni *NewInterpreter) executeFor(node *ForNode) error {
+	start, err := ni.evaluateExpression(node.Start)
+	if err != nil {
+		return err
+	}
+
+	end, err := ni.evaluateExpression(node.End)
+	if err != nil {
+		return err
+	}
+
+	step, err := ni.evaluateExpression(node.Step)
+	if err != nil {
+		return err
+	}
+
+	startNum := ni.toFloat(start)
+	endNum := ni.toFloat(end)
+	stepNum := ni.toFloat(step)
+
+	for i := startNum; i < endNum; i += stepNum {
+		ni.variables[node.Variable] = i
+
+		for _, stmt := range node.Body {
+			if err := ni.executeNode(stmt); err != nil {
+				return err
 			}
-		case 10: // memory out
-			// Форматированный вывод переменных
-			var keys []string
-			for k := range i.variables {
-				keys = append(keys, k)
+
+			if ni.shouldReturn {
+				return nil
 			}
-			sort.Strings(keys) // Сортировка ключей по алфавиту
-			for idx, key := range keys {
-				if val, ok := i.variables[key]; ok {
-					fmt.Printf("%d) %v\n", idx+1, val)
-				}
+
+			if ni.shouldBreak {
+				ni.shouldBreak = false
+				return nil
 			}
-		case 13: // Text.length
-			varName := params["var"]
-			if val, ok := i.variables[varName].(string); ok {
-				i.lastResult = utf8.RuneCountInString(val)
-			} else {
-				fmt.Println("Ошибка: переменная не является текстом")
+
+			if ni.shouldContinue {
+				ni.shouldContinue = false
+				break
 			}
-		case 14: // Text.upper
-			varName := params["var"]
-			if val, ok := i.variables[varName].(string); ok {
-				i.lastResult = strings.ToUpper(val)
-			} else {
-				fmt.Println("Ошибка: переменная не является текстом")
+		}
+	}
+
+	return nil
+}
+
+func (ni *NewInterpreter) executeWhile(node *WhileNode) error {
+	for {
+		condition, err := ni.evaluateExpression(node.Condition)
+		if err != nil {
+			return err
+		}
+
+		if !ni.isTruthy(condition) {
+			break
+		}
+
+		for _, stmt := range node.Body {
+			if err := ni.executeNode(stmt); err != nil {
+				return err
 			}
-		// Новые функции
-		case 15: // abs
-			varName := params["var"]
-			if val, ok := i.variables[varName].(float64); ok {
-				i.lastResult = math.Abs(val)
-			} else if val, ok := i.variables[varName].(int); ok {
-				i.lastResult = float64(math.Abs(float64(val)))
-			} else {
-				fmt.Println("Ошибка: переменная не является числом")
+
+			if ni.shouldReturn {
+				return nil
 			}
-		case 16: // sqrt
-			varName := params["var"]
-			if val, ok := i.variables[varName].(float64); ok {
-				i.lastResult = math.Sqrt(val)
-			} else if val, ok := i.variables[varName].(int); ok {
-				i.lastResult = math.Sqrt(float64(val))
-			} else {
-				fmt.Println("Ошибка: переменная не является числом")
+
+			if ni.shouldBreak {
+				ni.shouldBreak = false
+				return nil
 			}
-		case 17: // pow
-			baseStr := params["base"]
-			expStr := params["exponent"]
-			var base, exp float64
-			if val, ok := i.variables[baseStr]; ok {
-				if v, ok := val.(int); ok {
-					base = float64(v)
-				} else if v, ok := val.(float64); ok {
-					base = v
-				}
-			} else {
-				base, _ = strconv.ParseFloat(baseStr, 64)
+
+			if ni.shouldContinue {
+				ni.shouldContinue = false
+				break
 			}
-			if val, ok := i.variables[expStr]; ok {
-				if v, ok := val.(int); ok {
-					exp = float64(v)
-				} else if v, ok := val.(float64); ok {
-					exp = v
-				}
-			} else {
-				exp, _ = strconv.ParseFloat(expStr, 64)
-			}
-			i.lastResult = math.Pow(base, exp)
-		case 18: // round
-			varName := params["var"]
-			if val, ok := i.variables[varName].(float64); ok {
-				i.lastResult = math.Round(val)
-			} else if val, ok := i.variables[varName].(int); ok {
-				i.lastResult = float64(val)
-			} else {
-				fmt.Println("Ошибка: переменная не является числом")
-			}
-		case 19: // sin
-			varName := params["var"]
-			if val, ok := i.variables[varName].(float64); ok {
-				i.lastResult = math.Sin(val)
-			} else if val, ok := i.variables[varName].(int); ok {
-				i.lastResult = math.Sin(float64(val))
-			} else {
-				fmt.Println("Ошибка: переменная не является числом")
-			}
-		case 20: // cos
-			varName := params["var"]
-			if val, ok := i.variables[varName].(float64); ok {
-				i.lastResult = math.Cos(val)
-			} else if val, ok := i.variables[varName].(int); ok {
-				i.lastResult = math.Cos(float64(val))
-			} else {
-				fmt.Println("Ошибка: переменная не является числом")
-			}
-		case 21: // tan
-			varName := params["var"]
-			if val, ok := i.variables[varName].(float64); ok {
-				i.lastResult = math.Tan(val)
-			} else if val, ok := i.variables[varName].(int); ok {
-				i.lastResult = math.Tan(float64(val))
-			} else {
-				fmt.Println("Ошибка: переменная не является числом")
-			}
-		case 22: // log
-			varName := params["var"]
-			if val, ok := i.variables[varName].(float64); ok {
-				i.lastResult = math.Log(val)
-			} else if val, ok := i.variables[varName].(int); ok {
-				i.lastResult = math.Log(float64(val))
-			} else {
-				fmt.Println("Ошибка: переменная не является числом")
-			}
-		case 23: // log10
-			varName := params["var"]
-			if val, ok := i.variables[varName].(float64); ok {
-				i.lastResult = math.Log10(val)
-			} else if val, ok := i.variables[varName].(int); ok {
-				i.lastResult = math.Log10(float64(val))
-			} else {
-				fmt.Println("Ошибка: переменная не является числом")
-			}
-		case 24: // random
-			i.lastResult = rand.Float64()
-		case 25: // randint
-			minStr := params["min"]
-			maxStr := params["max"]
-			var min, max int
-			if val, ok := i.variables[minStr]; ok {
-				if v, ok := val.(int); ok {
-					min = v
-				}
-			} else {
-				min, _ = strconv.Atoi(minStr)
-			}
-			if val, ok := i.variables[maxStr]; ok {
-				if v, ok := val.(int); ok {
-					max = v
-				}
-			} else {
-				max, _ = strconv.Atoi(maxStr)
-			}
-			i.lastResult = rand.Intn(max-min+1) + min
-		case 26: // len
-			varName := params["var"]
-			if val, ok := i.variables[varName].(string); ok {
-				i.lastResult = utf8.RuneCountInString(val)
-			} else {
-				fmt.Println("Ошибка: переменная не является строкой")
-			}
-		case 27: // substr
-			varName := params["var"]
-			startStr := params["start"]
-			lengthStr := params["length"]
-			start, _ := strconv.Atoi(startStr)
-			length, _ := strconv.Atoi(lengthStr)
-			if val, ok := i.variables[varName].(string); ok {
-				if start >= 0 && start < len(val) && length >= 0 {
-					if start+length > len(val) {
-						length = len(val) - start
-					}
-					i.lastResult = val[start : start+length]
-				} else {
-					fmt.Println("Ошибка: неверные индексы")
-				}
-			} else {
-				fmt.Println("Ошибка: переменная не является строкой")
-			}
-		case 28: // find
-			strVar := params["str"]
-			subVar := params["sub"]
-			if str, ok := i.variables[strVar].(string); ok {
-				if sub, ok := i.variables[subVar].(string); ok {
-					i.lastResult = strings.Index(str, sub)
-				} else {
-					fmt.Println("Ошибка: подстрока не является строкой")
-				}
-			} else {
-				fmt.Println("Ошибка: строка не является строкой")
-			}
-		case 29: // replace
-			strVar := params["str"]
-			oldVar := params["old"]
-			newVar := params["new"]
-			if str, ok := i.variables[strVar].(string); ok {
-				if old, ok := i.variables[oldVar].(string); ok {
-					if new, ok := i.variables[newVar].(string); ok {
-						i.lastResult = strings.Replace(str, old, new, -1)
-					} else {
-						fmt.Println("Ошибка: новое значение не является строкой")
-					}
-				} else {
-					fmt.Println("Ошибка: старое значение не является строкой")
-				}
-			} else {
-				fmt.Println("Ошибка: строка не является строкой")
-			}
-		case 30: // split
-			strVar := params["str"]
-			sepVar := params["sep"]
-			if str, ok := i.variables[strVar].(string); ok {
-				if sep, ok := i.variables[sepVar].(string); ok {
-					i.lastResult = strings.Split(str, sep)
-				} else {
-					fmt.Println("Ошибка: разделитель не является строкой")
-				}
-			} else {
-				fmt.Println("Ошибка: строка не является строкой")
-			}
-		case 31: // join
-			sliceVar := params["slice"]
-			sepVar := params["sep"]
-			if slice, ok := i.variables[sliceVar].([]string); ok {
-				if sep, ok := i.variables[sepVar].(string); ok {
-					i.lastResult = strings.Join(slice, sep)
-				} else {
-					fmt.Println("Ошибка: разделитель не является строкой")
-				}
-			} else {
-				fmt.Println("Ошибка: переменная не является срезом строк")
-			}
-		case 32: // lower
-			varName := params["var"]
-			if val, ok := i.variables[varName].(string); ok {
-				i.lastResult = strings.ToLower(val)
-			} else {
-				fmt.Println("Ошибка: переменная не является строкой")
-			}
-		case 33: // for
-			varName := params["var"]
-			startStr := params["start"]
-			endStr := params["end"]
-			start, _ := strconv.Atoi(startStr)
-			end, _ := strconv.Atoi(endStr)
-			for j := start; j <= end; j++ {
-				i.variables[varName] = j
-				for _, stmt := range i.ifBlock {
-					i.ExecuteStatement(stmt)
-				}
-			}
-			i.ifBlock = []string{}
-		case 34: // while
-			condVar := params["var"]
-			condValueStr := params["value"]
-			condValue, _ := strconv.Atoi(condValueStr)
-			for {
-				if val, ok := i.variables[condVar].(int); ok && val == condValue {
-					for _, stmt := range i.ifBlock {
-						i.ExecuteStatement(stmt)
-					}
-				} else {
-					break
-				}
-			}
-			i.ifBlock = []string{}
-		case 35: // do
-			i.inIfBlock = true
-		case 36: // while_do
-			condVar := params["var"]
-			condValueStr := params["value"]
-			condValue, _ := strconv.Atoi(condValueStr)
-			for {
-				for _, stmt := range i.ifBlock {
-					i.ExecuteStatement(stmt)
-				}
-				if val, ok := i.variables[condVar].(int); ok && val != condValue {
-					break
-				}
-			}
-			i.ifBlock = []string{}
-		case 37: // switch
-			varName := params["var"]
-			i.variables["switch_var"] = i.variables[varName]
-			i.inIfBlock = true
-		case 38: // case
-			if i.inIfBlock {
-				valueStr := params["value"]
-				value, _ := strconv.Atoi(valueStr)
-				if val, ok := i.variables["switch_var"].(int); ok && val == value {
-					for _, stmt := range i.ifBlock {
-						i.ExecuteStatement(stmt)
-					}
-				}
-			}
-			i.ifBlock = []string{}
-		case 39: // default
-			if i.inIfBlock {
-				for _, stmt := range i.ifBlock {
-					i.ExecuteStatement(stmt)
-				}
-			}
-			i.ifBlock = []string{}
-		case 40: // file.read
-			fileName := params["file"]
-			content, err := os.ReadFile(fileName)
+		}
+	}
+
+	return nil
+}
+
+func (ni *NewInterpreter) executeFunction(node *FunctionNode) error {
+	ni.functions[node.Name] = node
+	return nil
+}
+
+func (ni *NewInterpreter) executeFunctionCall(node *FunctionCallNode) (interface{}, error) {
+	// Встроенные функции
+	switch node.Name {
+	case "input":
+		fmt.Print("Введите значение: ")
+		var input string
+		fmt.Scanln(&input)
+		return input, nil
+	case "int":
+		if len(node.Arguments) > 0 {
+			val, err := ni.evaluateExpression(node.Arguments[0])
 			if err != nil {
-				fmt.Println("Ошибка чтения файла:", err)
-			} else {
-				i.lastResult = string(content)
+				return nil, err
 			}
-		case 41: // file.write
-			fileName := params["file"]
-			if content, ok := i.lastResult.(string); ok {
-				err := os.WriteFile(fileName, []byte(content), 0644)
-				if err != nil {
-					fmt.Println("Ошибка записи файла:", err)
-				}
+			return int(ni.toFloat(val)), nil
+		}
+	case "float":
+		if len(node.Arguments) > 0 {
+			val, err := ni.evaluateExpression(node.Arguments[0])
+			if err != nil {
+				return nil, err
 			}
-		case 42: // print_formatted
-			varName := params["var"]
-			if val, ok := i.variables[varName]; ok {
-				fmt.Printf("%v\n", val)
-			} else {
-				fmt.Printf("%s\n", varName)
+			return ni.toFloat(val), nil
+		}
+	case "str":
+		if len(node.Arguments) > 0 {
+			val, err := ni.evaluateExpression(node.Arguments[0])
+			if err != nil {
+				return nil, err
 			}
-		case 43: // input
-			varName := params["var"]
-			fmt.Printf("Введите значение для %s: ", varName)
-			reader := bufio.NewReader(os.Stdin)
-			input, _ := reader.ReadString('\n')
-			i.variables[varName] = strings.TrimSpace(input)
-		case 44: // array_create
-			sizeStr := params["size"]
-			size, _ := strconv.Atoi(sizeStr)
-			i.lastResult = make([]interface{}, size)
-		case 45: // array_set
-			arrayVar := params["array"]
-			indexStr := params["index"]
-			valueVar := params["value"]
-			index, _ := strconv.Atoi(indexStr)
-			if array, ok := i.variables[arrayVar].([]interface{}); ok {
-				if index >= 0 && index < len(array) {
-					if val, ok := i.variables[valueVar]; ok {
-						array[index] = val
-					}
-				}
+			return fmt.Sprintf("%v", val), nil
+		}
+	case "len":
+		if len(node.Arguments) > 0 {
+			val, err := ni.evaluateExpression(node.Arguments[0])
+			if err != nil {
+				return nil, err
 			}
-		case 46: // array_get
-			arrayVar := params["array"]
-			indexStr := params["index"]
-			index, _ := strconv.Atoi(indexStr)
-			if array, ok := i.variables[arrayVar].([]interface{}); ok {
-				if index >= 0 && index < len(array) {
-					i.lastResult = array[index]
-				} else {
-					fmt.Println("Ошибка: индекс вне диапазона")
-				}
-			}
-		case 47: // list_create
-			i.lastResult = []interface{}{}
-		case 48: // list_append
-			listVar := params["list"]
-			valueVar := params["value"]
-			if list, ok := i.variables[listVar].([]interface{}); ok {
-				if val, ok := i.variables[valueVar]; ok {
-					i.variables[listVar] = append(list, val)
-				}
-			}
-		case 49: // list_get
-			listVar := params["list"]
-			indexStr := params["index"]
-			index, _ := strconv.Atoi(indexStr)
-			if list, ok := i.variables[listVar].([]interface{}); ok {
-				if index >= 0 && index < len(list) {
-					i.lastResult = list[index]
-				} else {
-					fmt.Println("Ошибка: индекс вне диапазона")
-				}
-			}
-		case 50: // dict_create
-			i.lastResult = make(map[string]interface{})
-		case 51: // dict_set
-			dictVar := params["dict"]
-			keyVar := params["key"]
-			valueVar := params["value"]
-			if dict, ok := i.variables[dictVar].(map[string]interface{}); ok {
-				if key, ok := i.variables[keyVar].(string); ok {
-					if val, ok := i.variables[valueVar]; ok {
-						dict[key] = val
-					}
-				}
-			}
-		case 52: // dict_get
-			dictVar := params["dict"]
-			keyVar := params["key"]
-			if dict, ok := i.variables[dictVar].(map[string]interface{}); ok {
-				if key, ok := i.variables[keyVar].(string); ok {
-					if val, exists := dict[key]; exists {
-						i.lastResult = val
-					} else {
-						fmt.Println("Ошибка: ключ не найден")
-					}
-				}
-			}
-		case 53: // time
-			i.lastResult = time.Now().Format("15:04:05")
-		case 54: // date
-			i.lastResult = time.Now().Format("2006-01-02")
-		case 55: // env
-			varName := params["var"]
-			i.lastResult = os.Getenv(varName)
-		case 56: // def
-			funcName := params["name"]
-			i.functions[funcName] = []string{}
-		case 57: // function_call
-			funcName := params["func"]
-			if cmds, ok := i.functions[funcName]; ok {
-				for _, cmd := range cmds {
-					i.ExecuteStatement(cmd)
-				}
+			if str, ok := val.(string); ok {
+				return float64(len(str)), nil
 			}
 		}
+	}
+
+	// Пользовательские функции
+	fn, exists := ni.functions[node.Name]
+	if !exists {
+		return nil, fmt.Errorf("функция '%s' не определена", node.Name)
+	}
+
+	if len(node.Arguments) != len(fn.Parameters) {
+		return nil, fmt.Errorf("функция '%s' ожидает %d аргументов, получено %d",
+			node.Name, len(fn.Parameters), len(node.Arguments))
+	}
+
+	// Сохраняем текущие переменные
+	oldVars := make(map[string]interface{})
+	for k, v := range ni.variables {
+		oldVars[k] = v
+	}
+
+	// Устанавливаем параметры
+	for i, param := range fn.Parameters {
+		val, err := ni.evaluateExpression(node.Arguments[i])
+		if err != nil {
+			return nil, err
+		}
+		ni.variables[param] = val
+	}
+
+	// Выполняем тело функции
+	for _, stmt := range fn.Body {
+		if err := ni.executeNode(stmt); err != nil {
+			return nil, err
+		}
+		if ni.shouldReturn {
+			break
+		}
+	}
+
+	result := ni.returnValue
+	ni.shouldReturn = false
+	ni.returnValue = nil
+
+	// Восстанавливаем переменные
+	ni.variables = oldVars
+
+	return result, nil
+}
+
+func (ni *NewInterpreter) executeReturn(node *ReturnNode) error {
+	if node.Value != nil {
+		val, err := ni.evaluateExpression(node.Value)
+		if err != nil {
+			return err
+		}
+		ni.returnValue = val
+	}
+	ni.shouldReturn = true
+	return nil
+}
+
+func (ni *NewInterpreter) executeMemAlloc(node *MemAllocNode) error {
+	size, err := ni.evaluateExpression(node.Size)
+	if err != nil {
+		return err
+	}
+
+	sizeInt := int(ni.toFloat(size))
+	return ni.memoryManager.Alloc(node.Name, sizeInt)
+}
+
+func (ni *NewInterpreter) executeMemFree(node *MemFreeNode) error {
+	return ni.memoryManager.Free(node.Name)
+}
+
+func (ni *NewInterpreter) executeProcCreate(node *ProcCreateNode) error {
+	codeFile, err := ni.evaluateExpression(node.CodeFile)
+	if err != nil {
+		return err
+	}
+
+	codeFilePath := fmt.Sprintf("%v", codeFile)
+	code, err := os.ReadFile(codeFilePath)
+	if err != nil {
+		return fmt.Errorf("ошибка чтения файла процесса: %v", err)
+	}
+
+	procID := ni.processManager.Create(node.Name, string(code))
+	ni.variables["last_proc_id"] = float64(procID)
+	return nil
+}
+
+func (ni *NewInterpreter) executeProcRead(node *ProcReadNode) error {
+	procID, err := ni.evaluateExpression(node.ProcID)
+	if err != nil {
+		return err
+	}
+
+	procIDInt := int(ni.toFloat(procID))
+	code, err := ni.processManager.Read(procIDInt)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("\n=== КОД ПРОЦЕССА #%d ===\n%s\n========================\n", procIDInt, code)
+	return nil
+}
+
+func (ni *NewInterpreter) executeProcKill(node *ProcKillNode) error {
+	procID, err := ni.evaluateExpression(node.ProcID)
+	if err != nil {
+		return err
+	}
+
+	procIDInt := int(ni.toFloat(procID))
+	return ni.processManager.Kill(procIDInt)
+}
+
+func (ni *NewInterpreter) evaluateExpression(node Node) (interface{}, error) {
+	switch n := node.(type) {
+	case *NumberNode:
+		return n.Value, nil
+	case *StringNode:
+		return n.Value, nil
+	case *IdentifierNode:
+		if val, exists := ni.variables[n.Name]; exists {
+			return val, nil
+		}
+		return nil, fmt.Errorf("переменная '%s' не определена", n.Name)
+	case *BinaryOpNode:
+		return ni.evaluateBinaryOp(n)
+	case *UnaryOpNode:
+		return ni.evaluateUnaryOp(n)
+	case *FunctionCallNode:
+		return ni.executeFunctionCall(n)
+	case *ListNode:
+		elements := make([]interface{}, len(n.Elements))
+		for i, elem := range n.Elements {
+			val, err := ni.evaluateExpression(elem)
+			if err != nil {
+				return nil, err
+			}
+			elements[i] = val
+		}
+		return elements, nil
+	default:
+		return nil, fmt.Errorf("неизвестный тип выражения: %T", node)
 	}
 }
 
-func parseExpression(expr string, variables map[string]interface{}) interface{} {
-	expr = strings.ReplaceAll(expr, " ", "")
-	parts := strings.Split(expr, "+")
-	if len(parts) == 2 {
-		left := getValue(parts[0], variables)
-		right := getValue(parts[1], variables)
-		if leftFloat, ok := left.(float64); ok {
-			if rightFloat, ok := right.(float64); ok {
-				return leftFloat + rightFloat
+func (ni *NewInterpreter) evaluateBinaryOp(node *BinaryOpNode) (interface{}, error) {
+	left, err := ni.evaluateExpression(node.Left)
+	if err != nil {
+		return nil, err
+	}
+
+	right, err := ni.evaluateExpression(node.Right)
+	if err != nil {
+		return nil, err
+	}
+
+	// Строковая конкатенация
+	if node.Operator == "+" {
+		if leftStr, ok := left.(string); ok {
+			if rightStr, ok := right.(string); ok {
+				return leftStr + rightStr, nil
 			}
 		}
-		return left.(int) + right.(int)
 	}
-	parts = strings.Split(expr, "-")
-	if len(parts) == 2 {
-		left := getValue(parts[0], variables)
-		right := getValue(parts[1], variables)
-		if leftFloat, ok := left.(float64); ok {
-			if rightFloat, ok := right.(float64); ok {
-				return leftFloat - rightFloat
-			}
+
+	// Числовые операции
+	leftNum := ni.toFloat(left)
+	rightNum := ni.toFloat(right)
+
+	switch node.Operator {
+	case "+":
+		return leftNum + rightNum, nil
+	case "-":
+		return leftNum - rightNum, nil
+	case "*":
+		return leftNum * rightNum, nil
+	case "/":
+		if rightNum == 0 {
+			return nil, fmt.Errorf("деление на ноль")
 		}
-		return left.(int) - right.(int)
+		return leftNum / rightNum, nil
+	case "%":
+		return math.Mod(leftNum, rightNum), nil
+	case "**":
+		return math.Pow(leftNum, rightNum), nil
+	case "==":
+		return leftNum == rightNum, nil
+	case "!=":
+		return leftNum != rightNum, nil
+	case "<":
+		return leftNum < rightNum, nil
+	case ">":
+		return leftNum > rightNum, nil
+	case "<=":
+		return leftNum <= rightNum, nil
+	case ">=":
+		return leftNum >= rightNum, nil
+	default:
+		return nil, fmt.Errorf("неизвестный оператор: %s", node.Operator)
 	}
-	parts = strings.Split(expr, "*")
-	if len(parts) == 2 {
-		left := getValue(parts[0], variables)
-		right := getValue(parts[1], variables)
-		if leftFloat, ok := left.(float64); ok {
-			if rightFloat, ok := right.(float64); ok {
-				return leftFloat * rightFloat
-			}
-		}
-		return left.(int) * right.(int)
-	}
-	parts = strings.Split(expr, "/")
-	if len(parts) == 2 {
-		left := getValue(parts[0], variables)
-		right := getValue(parts[1], variables)
-		if leftFloat, ok := left.(float64); ok {
-			if rightFloat, ok := right.(float64); ok {
-				if rightFloat == 0 {
-					fmt.Println("Ошибка: деление на ноль")
-					return 0
-				}
-				return leftFloat / rightFloat
-			}
-		}
-		if right.(int) == 0 {
-			fmt.Println("Ошибка: деление на ноль")
-			return 0
-		}
-		return left.(int) / right.(int)
-	}
-	return getValue(expr, variables)
 }
 
-func getValue(part string, variables map[string]interface{}) interface{} {
-	if val, ok := variables[part]; ok {
-		return val
+func (ni *NewInterpreter) evaluateUnaryOp(node *UnaryOpNode) (interface{}, error) {
+	operand, err := ni.evaluateExpression(node.Operand)
+	if err != nil {
+		return nil, err
 	}
-	if num, err := strconv.Atoi(part); err == nil {
-		return num
+
+	switch node.Operator {
+	case "-":
+		return -ni.toFloat(operand), nil
+	case "not":
+		return !ni.isTruthy(operand), nil
+	default:
+		return nil, fmt.Errorf("неизвестный унарный оператор: %s", node.Operator)
 	}
-	if num, err := strconv.ParseFloat(part, 64); err == nil {
-		return num
-	}
-	return part
 }
 
-func parseTextExpression(expr string, variables map[string]interface{}) string {
-	expr = strings.ReplaceAll(expr, " ", "")
-	parts := strings.Split(expr, "+")
-	var result string
-	for _, part := range parts {
-		if val, ok := variables[part].(string); ok {
-			if result != "" {
-				result += " "
-			}
-			result += val
-		} else {
-			fmt.Println("Ошибка: переменная не является текстом")
+func (ni *NewInterpreter) toFloat(val interface{}) float64 {
+	switch v := val.(type) {
+	case float64:
+		return v
+	case int:
+		return float64(v)
+	case bool:
+		if v {
+			return 1
 		}
+		return 0
+	case string:
+		// Попытка преобразовать строку в число
+		var f float64
+		fmt.Sscanf(v, "%f", &f)
+		return f
+	default:
+		return 0
 	}
-	return result
 }
 
-func (i *Interpreter) ExecuteProgram(program string) {
-	lines := strings.Split(program, "\n")
-	var currentFunction string
-
-	for _, line := range lines {
-		if idx := strings.Index(line, "//"); idx != -1 {
-			line = line[:idx]
-		}
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-
-		lineLower := strings.ToLower(line)
-
-		switch {
-		case strings.HasPrefix(lineLower, "function ("):
-			currentFunction = strings.Trim(strings.TrimPrefix(line, "Function ("), ")")
-			i.functions[currentFunction] = []string{}
-		case lineLower == "memory start (":
-			continue
-		case lineLower == ")":
-			currentFunction = ""
-		case currentFunction != "":
-			i.functions[currentFunction] = append(i.functions[currentFunction], line)
-		default:
-			i.ExecuteStatement(line)
-		}
+func (ni *NewInterpreter) isTruthy(val interface{}) bool {
+	switch v := val.(type) {
+	case bool:
+		return v
+	case float64:
+		return v != 0
+	case int:
+		return v != 0
+	case string:
+		return v != ""
+	case nil:
+		return false
+	default:
+		return true
 	}
 }
