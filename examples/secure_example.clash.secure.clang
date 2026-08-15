@@ -1,0 +1,27 @@
+// SECURE COMPILED BINARY (16 lines)
+// Generated with enhanced memory protection and integrity checks
+// Memory encryption: XOR with integrity hashes
+
+
+// EXECUTABLE CODE:
+function(SecureFunc){
+    flag = true
+    message = 'Hello Secure World'
+    debug() // Plaintext debug
+}
+
+memory.start(SecureFunc){
+    solve(42 + 8)      // Will be stored in solve.out
+    print(solve.out)   // Shows 50
+}
+
+memory.load(SecureFunc)
+memory.out            // XOR+hex encoded variables
+
+// Note: decode() removed in secure version
+
+
+// SECURITY SUMMARY:
+// Integrity hashes: 0 variables
+// Protection enabled: XOR encryption
+// Anti-debugging: enabled

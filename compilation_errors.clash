@@ -1,0 +1,249 @@
+//=============================================================================
+// Working Example - Valid ClashLang Program
+//=============================================================================
+function(main){
+    x = 42
+    name = 'Hello World'
+    print(x)
+    print(name)
+}
+
+memory.start(main){
+    y = 100
+    print(y)
+}
+
+memory.load(main)
+memory.out
+decode()
+
+//=============================================================================
+// ERROR VARIANTS - What compiler catches
+//=============================================================================
+
+//=============================================================================
+// 1. Invalid Function Registration (no body)
+// Error: "Line X: Invalid syntax: function(name)"
+//=============================================================================
+function(InvalidFunc)
+memory.start(InvalidFunc){
+    print('This function won't work!')
+}
+
+//=============================================================================
+// 2. Multiple function registrations
+// Error: "Line X: Invalid syntax: function(invalid2)"
+//=============================================================================
+function(invalid1)
+function(invalid2) {
+    print('Only second one has body')
+}
+
+//=============================================================================
+// 3. Invalid variable assignment syntax
+// Error: "Line X: Invalid syntax: x =" or similar
+//=============================================================================
+function(badVar){
+    x =         // Missing value
+    name = 'Valid'  // Valid
+    = 'Invalid'    // Missing variable name
+    y = 100        // Valid
+}
+
+//=============================================================================
+// 4. Use of undefined variables
+// Error: Not caught by compiler, but runtime error
+//=============================================================================
+function(undefTest){
+    z = 1
+    print(z)  // Valid
+    print(w)  // Undefined - runtime error
+    t = w + 1  // Can't compute undefined
+}
+
+//=============================================================================
+// 5. Invalid loop syntax
+// Error: "Line X: Invalid syntax: repeat()"
+//=============================================================================
+function(badLoop){
+    repeat(){         // Missing loop variable
+        print('Never executes')
+    }
+}
+
+//=============================================================================
+// 6. Unsafe loop limits (compiler catches)
+// Error: "Line X: Possible stack overflow in: repeat(0) {...}"
+//=============================================================================
+function(unsafeLoop){
+    repeat(0){
+        print('This loop never executes')
+    }
+    
+    repeat(1){
+        print('This executes once')
+    }
+}
+
+//=============================================================================
+// 7. Missing file close operations
+// Error: "Line X: Potential use-after-free: print(file.read())"  
+//=============================================================================
+function(badFile){
+    file.open('test.txt')
+    content = file.text.read
+    // Forgetting to call file.close()  
+}
+
+//=============================================================================
+// 8. Invalid control flow
+// Error: "Line X: Invalid syntax: if then jump(Func)" (missing expression)
+//=============================================================================
+function(badIf){
+    if           // Missing expression
+    then jump(SomeFunc)
+    else: jump(OtherFunc)
+}
+
+//=============================================================================
+// 9. Invalid string operations
+// Error: "Line X: Invalid syntax: len)" (missing variable)
+//=============================================================================
+function(badString){
+    len())          // Missing variable
+    upper('Valid')  // Valid syntax
+}
+
+//=============================================================================
+// 10. Nested function with errors
+// Error: Multiple syntax errors
+//=============================================================================
+function(nestedErrors){
+    func1 =           // Invalid
+    func2 = goodVar  // Valid
+    func3 = {func1 {  // Invalid body
+        print('Nested')
+    }
+}
+
+//=============================================================================
+// 11. Memory load with undefined functions
+// Runtime error - compiler doesn't catch this
+//=============================================================================
+function(loadErrors){
+    x = 42
+}
+
+memory.load(UndefinedFunc)  // Runtime error: function not found
+memory.load(loadErrors)     // Valid
+
+//=============================================================================
+// 12. Invalid escape or malformed syntax
+// Error: Multiple line syntax errors
+//=============================================================================
+function(malformed){
+    if x = 42      // Missing 'then'
+    then jump(Func)
+    else: noJump   // Missing 'jump('
+}
+
+//=============================================================================
+// 13. Improper use of security commands
+// Error: "Line X: Invalid syntax: decode()" - outside of proper context
+//=============================================================================
+function(securityErr){
+    x = 42
+    decode()       // Only valid in memory context
+    print(x)
+}
+
+//=============================================================================
+// 14. Function call with wrong syntax
+// Error: "Line X: Invalid syntax: function() {}" or invalid syntax
+//=============================================================================
+function(badFuncCall){
+    function("()")  // Wrong syntax
+    print('Invalid call')
+}
+
+//=============================================================================
+// 15. Missing closing braces/braces mismatch
+// Error: "Line X: Invalid syntax: }" (not in block)
+//=============================================================================
+function(braceError){
+    x = 42
+}
+}
+function(missingBrace){
+    y = 100  // Missing closing brace
+
+//=============================================================================
+// 16. Empty file
+// Error: Usually handled before compilation
+//=============================================================================
+// (Empty file would error at interpreter level)
+
+//=============================================================================
+// 17. Comments alone (valid but useless)
+//=============================================================================
+// Only comments here - valid but does nothing
+
+//=============================================================================
+// 18. Multiple inconsistent function definitions
+// Error: "Line X: Invalid syntax: function(dup)"
+//=============================================================================
+function(main){
+    x = 1
+}
+
+function(main){   // Second definition - may conflict
+    y = 2         // Overrides first
+}
+
+//=============================================================================
+// 19. Invalid data types
+// Not caught by compiler (Go handles it)
+//=============================================================================
+function(typeTest){
+    name = 'Text'
+    print(name)
+    age = 30
+    print(age)
+    isValid = true
+    print(isValid)
+    score = 3.14
+    print(score)
+}
+
+//=============================================================================
+// 20. Practical example combining valid code
+//=============================================================================
+function(practical){
+    user = 'Alice'
+    level = 1
+    power = 100
+    
+    print(user)
+    print('Level: ' + level)
+    print('Power: ' + power)
+    
+    if level = 1 then jump(level1)
+    else jump(other)
+}
+
+function(level1){
+    print('Started!')
+}
+
+function(other){
+    print('Alternative path')
+}
+
+memory.start(practical){
+    message = 'Game Started'
+    print(message)
+}
+
+memory.load(practical)
+memory.out
+decode()
